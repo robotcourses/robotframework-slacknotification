@@ -41,33 +41,19 @@ def retry_on_slack_error(max_retries: int = 3, delay: int = 1):
     return decorator
 
 def load_slack_config():
-    try:
-        spec = importlib.util.spec_from_file_location(
-            "robot_slack_config",
-            os.path.join(os.getcwd(), "robot_slack_config.py")
-        )
-        if not spec:
-            raise SlackNotificationError(
-                "Arquivo robot_slack_config.py não encontrado. "
-                "Crie este arquivo na raiz do seu projeto com as configurações do Slack."
-            )
-        
-        config = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(config)
-        
-        # Verifica se as configurações obrigatórias existem
-        if not hasattr(config, "SLACK_API_TOKEN") or not hasattr(config, "SLACK_CHANNEL"):
-            raise SlackNotificationError(
-                "SLACK_API_TOKEN e SLACK_CHANNEL são obrigatórios no arquivo robot_slack_config.py"
-            )
-        
-        return {
-            "token": config.SLACK_API_TOKEN,
-            "channel_id": config.SLACK_CHANNEL,
-            "suite_groups": getattr(config, "SUITE_SLACK_GROUPS", {})
-        }
-    except Exception as e:
-        raise SlackNotificationError(f"Erro ao carregar robot_slack_config.py: {str(e)}")
+    spec = importlib.util.spec_from_file_location(
+        "robot_slack_config",
+        os.path.join(os.getcwd(), "robot_slack_config.py")
+    )
+    
+    config = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(config)
+    
+    return {
+        "token": config.SLACK_API_TOKEN,
+        "channel_id": config.SLACK_CHANNEL,
+        "suite_groups": getattr(config, "SUITE_SLACK_GROUPS", {})
+    }
 
 def get_slack_usergroup_ids(token):
     from slack_sdk import WebClient
