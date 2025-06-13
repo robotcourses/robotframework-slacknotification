@@ -13,14 +13,25 @@ dependencies = [
     "slack-sdk (>=3.35.0,<4.0.0)",
     "robotframework (>=7.0,<8.0)"
 ]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Operating System :: OS Independent",
+    "Topic :: Software Development :: Quality Assurance",
+    "Topic :: Software Development :: Testing",
+    "Programming Language :: Python",
+    "Programming Language :: Python :: 3.8",
+    "Framework :: Robot Framework",
+    "Framework :: Robot Framework :: Library",
+]
 
 [tool.poetry]
 packages = [
     {include = "RobotSlackNotification"}
 ]
 
-[tool.poetry.scripts]
-robotframework-slacknotification = "RobotSlackNotification:main"
+[tool.poetry.urls]
+"Github" = "https://github.com/robotcourses/robotframework-slacknotification"
+"Bugs Tracker" = "https://github.com/robotcourses/robotframework-slacknotification/issues"
 
 [build-system]
 requires = ["poetry-core>=2.0.0,<3.0.0"]

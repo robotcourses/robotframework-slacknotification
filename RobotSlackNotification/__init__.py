@@ -5,7 +5,7 @@ import time
 import slack_sdk
 from slack_sdk.errors import SlackApiError
 from dotenv import load_dotenv
-from RobotSlackNotification.messages import PrincipalMessage, ErrorMessage, build_group_mention_message
+from RobotSlackNotification.messages import PrincipalMessage, ErrorMessage, build_group_mention_message, TRANSLATIONS
 from robot.libraries.BuiltIn import BuiltIn
 from functools import wraps
 import importlib.util
@@ -74,7 +74,8 @@ class RobotSlackNotification:
                  send_message: bool = True,
                  test_title: Optional[str] = None,
                  environment: Optional[str] = None,
-                 cicd_url: Optional[str] = None) -> None:
+                 cicd_url: Optional[str] = None,
+                 language: str = "en") -> None:
         
         self.config = SlackConfig(
             token=os.getenv('SLACK_API_TOKEN', ""),
@@ -84,6 +85,7 @@ class RobotSlackNotification:
             cicd_url=cicd_url,
             send_message=send_message
         )
+        self.language = language.lower()
 
         if not self.config.token or not self.config.channel_id:
             raise SlackNotificationError("SLACK_API_TOKEN e SLACK_CHANNEL são obrigatórios")
@@ -126,8 +128,9 @@ class RobotSlackNotification:
             except Exception:
                 self.config.test_title = result.name
 
-        self.general_result_status = 'Em Teste'
-        self.suite_result_status = 'Em Teste'
+        t = TRANSLATIONS.get(self.language, TRANSLATIONS["en"])
+        self.general_result_status = t["in_progress"]
+        self.suite_result_status = t["in_progress"]
         self.suite_name = result.name
         self.general_result_icon = self.result_icons_list[0]
         self.suite_result_icon = self.result_icons_list[0]
@@ -169,14 +172,17 @@ class RobotSlackNotification:
         if not self.config.send_message:
             return
 
-        self.general_result_status = result.status
+        t = TRANSLATIONS.get(self.language, TRANSLATIONS["en"])
 
         if result.passed:
             self.general_result_icon = self.result_icons_list[1]
+            self.general_result_status = t["status_passed"]
         elif result.failed:
             self.general_result_icon = self.result_icons_list[2]
+            self.general_result_status = t["status_failed"]
         else:
             self.general_result_icon = self.result_icons_list[3]
+            self.general_result_status = t["status_skipped"]
 
         # Envia menção aos grupos se houver falhas
         if self.count_failed > 0 and self.current_suite_groups:
@@ -188,7 +194,7 @@ class RobotSlackNotification:
             if ids:
                 mention_text = " ".join([f"<!subteam^{gid}>" for gid in ids])
                 plural = len(ids) > 1
-                mention_message = build_group_mention_message(mention_text, plural)
+                mention_message = build_group_mention_message(mention_text, plural, self.language)
                 self._post_thread_message(
                     None,
                     mention_message,
@@ -240,47 +246,39 @@ class RobotSlackNotification:
             raise
         
     def _build_principal_message(self, executions, success_executions, failed_executions, skipped_executions):
-        # Monta o header conforme presence de environment
         if self.config.environment and self.config.environment.strip():
             context_header = f"{self.config.test_title} | {self.config.environment}"
         else:
             context_header = f"{self.config.test_title}"
 
+        t = TRANSLATIONS.get(self.language, TRANSLATIONS["en"])
         message = PrincipalMessage(
-            context=context_header,
+            context=context_header,  # Agora será usado diretamente como header
             environment="",  # Não será usado no header, já está em context_header
-            cicd_url=self.cicd_url
+            cicd_url=self.cicd_url,
+            language=self.language
         )
-        
         # Atualiza o status geral
         message.blocks[2] = message.create_status_section(
-            self.general_result_status,
-            self.general_result_icon
+            t["general_status"],
+            self.general_result_icon,
+            t,
+            self.general_result_status
         )
-        
         # Atualiza os contadores
         message.blocks[3] = message.create_counter_section(
             executions,
             success_executions,
             failed_executions,
-            skipped_executions
+            skipped_executions,
+            t
         )
-        
         return message.to_dict()['blocks']
 
     def _build_error_message(self, result):
-        mention_text = ""
-        if self.current_suite_groups:
-            # Resolve handles para IDs
-            ids = [
-                self.usergroup_handle_to_id.get(handle.lstrip("@"))
-                for handle in self.current_suite_groups
-            ]
-            ids = [id_ for id_ in ids if id_]
-            if ids:
-                mention_text = " ".join([f"<!subteam^{gid}>" for gid in ids]) + " "
         message = ErrorMessage(
             scenario_name=result.longname,
-            error_message=mention_text + result.message
+            error_message=result.message,
+            language=self.language
         )
         return message.to_dict()['blocks']
