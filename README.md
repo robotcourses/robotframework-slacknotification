@@ -1,8 +1,6 @@
 # RobotSlackNotification
 
-<video src="docs/example_video.mp4" controls autoplay loop muted width="1920">
-  Seu navegador não suporta a tag HTML5 video.
-</video>
+![Exemplo de Uso](docs/example_video.gif)
 
 ## 🇧🇷 Descrição
 
