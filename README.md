@@ -41,17 +41,27 @@ SLACK_CHANNEL=ID_DO_CANAL
 
 ### 3. (Opcional) Configure os grupos de menção por suite
 
-Crie um arquivo chamado `slack_groups_config.py` na raiz do seu projeto de testes, conforme o exemplo abaixo:
+Crie um arquivo chamado `robot_slack_config.py` na raiz do seu projeto de testes, conforme o exemplo abaixo:
 
 ```python
+from dotenv import load_dotenv
+import os
+
+load_dotenv()
+
+# Configurações obrigatórias do Slack
+SLACK_API_TOKEN = os.getenv('SLACK_API_TOKEN', "")
+SLACK_CHANNEL = os.getenv('SLACK_CHANNEL', "")
+
+# Configurações opcionais de grupos por suite
 SUITE_SLACK_GROUPS = {
-    "Nome da Suite 1": ["grupo_dev", "grupo_qa"],
-    "Nome da Suite 2": ["grupo_ops"],
+    "Test Slack": ["grupo_dev", "grupo_test"],
 }
 ```
-- O nome da suite, deve ser igual ao exibido no log do Robot Framework
-- Os nomes dos grupos devem ser os "handles" dos User Groups do Slack (sem o `@`).
-- O arquivo é opcional. Se não existir, nenhuma menção será feita.
+
+- O nome da suite deve ser igual ao exibido no log do Robot Framework
+- Os nomes dos grupos devem ser os "handles" dos User Groups do Slack (sem o `@`)
+- O arquivo é obrigatório para a biblioteca funcionar
 
 ### 4. (Opcional) Suporte a múltiplos idiomas
 
@@ -157,7 +167,7 @@ SLACK_CHANNEL=YOUR_CHANNEL_ID
 
 ### 3. (Optional) Configure group mentions per suite
 
-Create a file named `slack_groups_config.py` in your test project root, as shown below:
+Create a file named `robot_slack_config.py` in your test project root, as shown below:
 
 ```python
 SUITE_SLACK_GROUPS = {

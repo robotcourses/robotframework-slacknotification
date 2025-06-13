@@ -4,23 +4,10 @@ import os
 import time
 import slack_sdk
 from slack_sdk.errors import SlackApiError
-from dotenv import load_dotenv
 from RobotSlackNotification.messages import PrincipalMessage, ErrorMessage, build_group_mention_message, TRANSLATIONS
 from robot.libraries.BuiltIn import BuiltIn
 from functools import wraps
 import importlib.util
-
-def load_env():
-    # Tenta carregar do diretório atual
-    if not load_dotenv('.env', override=True):
-        # Se não encontrar, tenta carregar do diretório do projeto
-        project_dir = os.getcwd()
-        if not load_dotenv(os.path.join(project_dir, '.env'), override=True):
-            # Se ainda não encontrar, tenta carregar do diretório do usuário
-            home_dir = os.path.expanduser('~')
-            load_dotenv(os.path.join(home_dir, '.env'), override=True)
-
-load_env()
 
 @dataclass
 class SlackConfig:
@@ -53,17 +40,34 @@ def retry_on_slack_error(max_retries: int = 3, delay: int = 1):
         return wrapper
     return decorator
 
-def load_suite_slack_groups():
+def load_slack_config():
     try:
         spec = importlib.util.spec_from_file_location(
-            "slack_groups_config",
-            os.path.join(os.getcwd(), "slack_groups_config.py")
+            "robot_slack_config",
+            os.path.join(os.getcwd(), "robot_slack_config.py")
         )
+        if not spec:
+            raise SlackNotificationError(
+                "Arquivo robot_slack_config.py não encontrado. "
+                "Crie este arquivo na raiz do seu projeto com as configurações do Slack."
+            )
+        
         config = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(config)
-        return getattr(config, "SUITE_SLACK_GROUPS", {})
-    except Exception:
-        return {}
+        
+        # Verifica se as configurações obrigatórias existem
+        if not hasattr(config, "SLACK_API_TOKEN") or not hasattr(config, "SLACK_CHANNEL"):
+            raise SlackNotificationError(
+                "SLACK_API_TOKEN e SLACK_CHANNEL são obrigatórios no arquivo robot_slack_config.py"
+            )
+        
+        return {
+            "token": config.SLACK_API_TOKEN,
+            "channel_id": config.SLACK_CHANNEL,
+            "suite_groups": getattr(config, "SUITE_SLACK_GROUPS", {})
+        }
+    except Exception as e:
+        raise SlackNotificationError(f"Erro ao carregar robot_slack_config.py: {str(e)}")
 
 def get_slack_usergroup_ids(token):
     from slack_sdk import WebClient
@@ -87,21 +91,18 @@ class RobotSlackNotification:
                  cicd_url: Optional[str] = None,
                  language: str = "en") -> None:
         
+        # Carrega as configurações do Slack do arquivo robot_slack_config.py
+        slack_config = load_slack_config()
+        
         self.config = SlackConfig(
-            token=os.getenv('SLACK_API_TOKEN', ""),
-            channel_id=os.getenv('SLACK_CHANNEL', ""),
+            token=slack_config["token"],
+            channel_id=slack_config["channel_id"],
             test_title=test_title,
             environment=environment,
             cicd_url=cicd_url,
             send_message=send_message
         )
         self.language = language.lower()
-
-        if not self.config.token or not self.config.channel_id:
-            raise SlackNotificationError(
-                "SLACK_API_TOKEN e SLACK_CHANNEL são obrigatórios. "
-                "Configure-os no arquivo .env do seu projeto."
-            )
 
         self.ROBOT_LIBRARY_LISTENER = self
         self.client = slack_sdk.WebClient(token=self.config.token, timeout=30)
@@ -129,7 +130,7 @@ class RobotSlackNotification:
         self.general_result_icon: Optional[Tuple[str, str]] = None
         self.suite_result_icon: Optional[Tuple[str, str]] = None
 
-        self.suite_slack_groups = load_suite_slack_groups()
+        self.suite_slack_groups = slack_config["suite_groups"]
         self.current_suite_groups = []
         self.usergroup_handle_to_id = get_slack_usergroup_ids(self.config.token)
 
