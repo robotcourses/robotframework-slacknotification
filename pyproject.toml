@@ -1,6 +1,6 @@
 [project]
 name = "robotframework-slacknotification"
-version = "0.1.1"
+version = "0.1.2"
 description = "Send real-time notifications to Slack with the results of your tests"
 authors = [
     {name = "Robot Courses",email = "git@robotcourses.com.br"}

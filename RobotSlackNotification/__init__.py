@@ -10,7 +10,17 @@ from robot.libraries.BuiltIn import BuiltIn
 from functools import wraps
 import importlib.util
 
-load_dotenv('.env', override=True)
+def load_env():
+    # Tenta carregar do diretório atual
+    if not load_dotenv('.env', override=True):
+        # Se não encontrar, tenta carregar do diretório do projeto
+        project_dir = os.getcwd()
+        if not load_dotenv(os.path.join(project_dir, '.env'), override=True):
+            # Se ainda não encontrar, tenta carregar do diretório do usuário
+            home_dir = os.path.expanduser('~')
+            load_dotenv(os.path.join(home_dir, '.env'), override=True)
+
+load_env()
 
 @dataclass
 class SlackConfig:
@@ -88,7 +98,10 @@ class RobotSlackNotification:
         self.language = language.lower()
 
         if not self.config.token or not self.config.channel_id:
-            raise SlackNotificationError("SLACK_API_TOKEN e SLACK_CHANNEL são obrigatórios")
+            raise SlackNotificationError(
+                "SLACK_API_TOKEN e SLACK_CHANNEL são obrigatórios. "
+                "Configure-os no arquivo .env do seu projeto."
+            )
 
         self.ROBOT_LIBRARY_LISTENER = self
         self.client = slack_sdk.WebClient(token=self.config.token, timeout=30)
