@@ -1,0 +1,27 @@
+[project]
+name = "robotframework-slacknotification"
+version = "0.1.0"
+description = "Send real-time notifications to Slack with the results of your tests"
+authors = [
+    {name = "Robot Courses",email = "git@robotcourses.com.br"}
+]
+license = {text = "Apache-2.0 license"}
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = [
+    "python-dotenv (>=1.1.0,<2.0.0)",
+    "slack-sdk (>=3.35.0,<4.0.0)",
+    "robotframework (>=7.0,<8.0)"
+]
+
+[tool.poetry]
+packages = [
+    {include = "RobotSlackNotification"}
+]
+
+[tool.poetry.scripts]
+robotframework-slacknotification = "RobotSlackNotification:main"
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"
