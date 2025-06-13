@@ -41,19 +41,33 @@ def retry_on_slack_error(max_retries: int = 3, delay: int = 1):
     return decorator
 
 def load_slack_config():
-    spec = importlib.util.spec_from_file_location(
-        "robot_slack_config",
-        os.path.join(os.getcwd(), "robot_slack_config.py")
-    )
-    
-    config = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(config)
-    
-    return {
-        "token": config.SLACK_API_TOKEN,
-        "channel_id": config.SLACK_CHANNEL,
-        "suite_groups": getattr(config, "SUITE_SLACK_GROUPS", {})
-    }
+    from robot.libraries.BuiltIn import BuiltIn
+    config_path = os.path.join(os.getcwd(), "robot_slack_config.py")
+    try:
+        spec = importlib.util.spec_from_file_location(
+            "robot_slack_config",
+            config_path
+        )
+        if not spec or not os.path.exists(config_path):
+            BuiltIn().log_to_console(
+                f"[ERRO] Arquivo robot_slack_config.py não encontrado na raiz do projeto. "
+                f"Crie o arquivo com as configurações necessárias antes de executar os testes."
+            )
+            return None
+        config = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(config)
+        # Verifica se as configurações obrigatórias existem
+        if not hasattr(config, "SLACK_API_TOKEN") or not hasattr(config, "SLACK_CHANNEL"):
+            raise SlackNotificationError(
+                "SLACK_API_TOKEN e SLACK_CHANNEL são obrigatórios no arquivo robot_slack_config.py"
+            )
+        return {
+            "token": config.SLACK_API_TOKEN,
+            "channel_id": config.SLACK_CHANNEL,
+            "suite_groups": getattr(config, "SUITE_SLACK_GROUPS", {})
+        }
+    except Exception as e:
+        raise SlackNotificationError(f"Erro ao carregar robot_slack_config.py: {str(e)}")
 
 def get_slack_usergroup_ids(token):
     from slack_sdk import WebClient
@@ -76,37 +90,29 @@ class RobotSlackNotification:
                  environment: Optional[str] = None,
                  cicd_url: Optional[str] = None,
                  language: str = "en") -> None:
-        
-        # Carrega as configurações do Slack do arquivo robot_slack_config.py
-        slack_config = load_slack_config()
-        
-        self.config = SlackConfig(
-            token=slack_config["token"],
-            channel_id=slack_config["channel_id"],
+        # Apenas armazena os argumentos, sem carregar config ainda
+        self._init_args = dict(
+            send_message=send_message,
             test_title=test_title,
             environment=environment,
             cicd_url=cicd_url,
-            send_message=send_message
+            language=language
         )
+        self.config = None
         self.language = language.lower()
-
         self.ROBOT_LIBRARY_LISTENER = self
-        self.client = slack_sdk.WebClient(token=self.config.token, timeout=30)
-        
-        self.cicd_url = self.config.cicd_url
+        self.client = None
+        self.cicd_url = cicd_url
         self.message_timestamp: List[str] = []
         self.status_list: List[str] = []
-        self.text_fallback = f'Aplicação em teste: {self.config.test_title}'
-
+        self.text_fallback = None
         self.suite_name: Optional[str] = None
         self.count_total: int = 0
         self.count_pass: int = 0
         self.count_failed: int = 0
         self.count_skipped: int = 0
-
         self.general_result_status: Optional[str] = None
         self.suite_result_status: Optional[str] = None
-
         self.result_icons_list: Tuple[Tuple[str, str], ...] = (
             ("white_circle", "26aa"),
             ("large_green_circle", "1f7e2"),
@@ -115,29 +121,49 @@ class RobotSlackNotification:
         )
         self.general_result_icon: Optional[Tuple[str, str]] = None
         self.suite_result_icon: Optional[Tuple[str, str]] = None
-
-        self.suite_slack_groups = slack_config["suite_groups"]
+        self.suite_slack_groups = {}
         self.current_suite_groups = []
+        self.usergroup_handle_to_id = {}
+
+    def _ensure_config(self):
+        if self.config is not None:
+            return
+        slack_config = load_slack_config()
+        if not slack_config:
+            raise SlackNotificationError(
+                "Arquivo robot_slack_config.py não encontrado. Crie o arquivo na raiz do projeto antes de executar os testes."
+            )
+        self.config = SlackConfig(
+            token=slack_config["token"],
+            channel_id=slack_config["channel_id"],
+            test_title=self._init_args["test_title"],
+            environment=self._init_args["environment"],
+            cicd_url=self._init_args["cicd_url"],
+            send_message=self._init_args["send_message"]
+        )
+        self.language = self._init_args["language"].lower()
+        self.client = slack_sdk.WebClient(token=self.config.token, timeout=30)
+        self.cicd_url = self.config.cicd_url
+        self.text_fallback = f'Aplicação em teste: {self.config.test_title}'
+        self.suite_slack_groups = slack_config["suite_groups"]
         self.usergroup_handle_to_id = get_slack_usergroup_ids(self.config.token)
 
     def start_suite(self, data, result):
+        self._ensure_config()
         # Se test_title não foi informado, usa o nome da suite
         if not self.config.test_title:
             try:
                 self.config.test_title = BuiltIn().get_variable_value('${SUITE_NAME}') or result.name
             except Exception:
                 self.config.test_title = result.name
-
         t = TRANSLATIONS.get(self.language, TRANSLATIONS["en"])
         self.general_result_status = t["in_progress"]
         self.suite_result_status = t["in_progress"]
         self.suite_name = result.name
         self.general_result_icon = self.result_icons_list[0]
         self.suite_result_icon = self.result_icons_list[0]
-
         # Associa grupos à suite (handles)
         self.current_suite_groups = self.suite_slack_groups.get(self.suite_name, [])
-
         if self.config.send_message and self.message_timestamp == []:
             message = self._build_principal_message(self.count_total, self.count_pass, self.count_failed, self.count_skipped)
             ts = self._post_principal_message(result, message)
