@@ -64,7 +64,8 @@ def load_slack_config():
         return {
             "token": config.SLACK_API_TOKEN,
             "channel_id": config.SLACK_CHANNEL,
-            "suite_groups": getattr(config, "SUITE_SLACK_GROUPS", {})
+            "suite_groups": getattr(config, "SUITE_SLACK_GROUPS", {}),
+            "debug_logs": getattr(config, 'DEBUG_LOGS', False)
         }
     except Exception as e:
         raise SlackNotificationError(f"Erro ao carregar robot_slack_config.py: {str(e)}")
@@ -124,6 +125,17 @@ class RobotSlackNotification:
         self.suite_slack_groups = {}
         self.current_suite_groups = []
         self.usergroup_handle_to_id = {}
+        self.debug_logs = False
+
+    def _log_debug(self, message: str):
+        """Método para exibir logs de debug quando DEBUG_LOGS estiver ativo"""
+        if self.debug_logs:
+            try:
+                BuiltIn().log_to_console(f"[DEBUG] {message}")
+            except Exception as e:
+                # Em caso de erro, tenta usar print como fallback
+                print(f"[DEBUG] {message}")
+                print(f"[DEBUG] Erro ao usar BuiltIn().log_to_console: {str(e)}")
 
     def _ensure_config(self):
         if self.config is not None:
@@ -149,6 +161,14 @@ class RobotSlackNotification:
         self.text_fallback = f'Aplicação em teste: {title}'
         self.suite_slack_groups = slack_config["suite_groups"]
         self.usergroup_handle_to_id = get_slack_usergroup_ids(self.config.token)
+        
+        # Carrega a configuração de debug do slack_config
+        self.debug_logs = slack_config.get("debug_logs", False)
+        if self.debug_logs:
+            BuiltIn().log_to_console(f"[DEBUG] Configuração DEBUG_LOGS carregada: {self.debug_logs}")
+        
+        self._log_debug("Configurações carregadas com sucesso")
+        self._log_debug(f"Debug logs: {'Ativado' if self.debug_logs else 'Desativado'}")
 
     def _get_suite_groups(self, suite_name: str) -> List[str]:
         """Busca grupos configurados para a suite em todos os níveis"""
@@ -164,29 +184,33 @@ class RobotSlackNotification:
 
     def start_suite(self, data, result):
         self._ensure_config()
-       
+        self._log_debug(f"Suite original: {result.name}")
+        
         try:
             suite_source = BuiltIn().get_variable_value('${SUITE_SOURCE}')
+            self._log_debug(f"SUITE_SOURCE: {suite_source}")
             
             if suite_source:
                 # Remove a extensão .robot e o caminho do arquivo
                 suite_name = os.path.splitext(os.path.basename(suite_source))[0]
                 # Constrói o nome completo da suite
                 self.suite_name = f"Pix.PixAutomatico.Pagador.{suite_name}"
+                self._log_debug(f"Nome completo da suite: {self.suite_name}")
             else:
                 # Se não conseguir o SUITE_SOURCE, tenta usar o nome completo do result
                 if "." in result.name:
                     self.suite_name = result.name
                 else:
                     self.suite_name = f"Pix.PixAutomatico.Pagador.{result.name}"
+                self._log_debug(f"Usando nome da suite do result: {self.suite_name}")
         except Exception as e:
             # Em caso de erro, tenta usar o nome completo do result
             if "." in result.name:
                 self.suite_name = result.name
             else:
                 self.suite_name = f"Pix.PixAutomatico.Pagador.{result.name}"
-            BuiltIn().log_to_console(f"Erro ao obter nome da suite: {str(e)}")
-            BuiltIn().log_to_console(f"Usando nome da suite do result: {self.suite_name}")
+            self._log_debug(f"Erro ao obter nome da suite: {str(e)}")
+            self._log_debug(f"Usando nome da suite do result: {self.suite_name}")
 
         t = TRANSLATIONS.get(self.language, TRANSLATIONS["en"])
         self.general_result_status = t["in_progress"]
@@ -196,11 +220,14 @@ class RobotSlackNotification:
         
         # Associa grupos à suite (handles)
         self.current_suite_groups = self._get_suite_groups(self.suite_name)
+        self._log_debug(f"Grupos encontrados para suite {self.suite_name}: {self.current_suite_groups}")
         
         if self.config.send_message and self.message_timestamp == []:
+            self._log_debug("Enviando mensagem principal...")
             message = self._build_principal_message(self.count_total, self.count_pass, self.count_failed, self.count_skipped)
             ts = self._post_principal_message(result, message)
             self.message_timestamp.append(ts)
+            self._log_debug(f"Mensagem enviada com timestamp: {ts}")
 
     def end_test(self, data, result):
         if self.config.send_message:
@@ -249,6 +276,8 @@ class RobotSlackNotification:
     @retry_on_slack_error(max_retries=3)
     def _post_principal_message(self, result, message: str) -> str:
         try:
+            self._log_debug(f"Tentando enviar mensagem para o canal: {self.config.channel_id}")
+            self._log_debug(f"Token configurado: {bool(self.config.token)}")
             response = self.client.chat_postMessage(
                 channel=self.config.channel_id,
                 blocks=message,
@@ -256,8 +285,11 @@ class RobotSlackNotification:
                 unfurl_links=False,
                 unfurl_media=False
             )
+            status = "sucesso" if response.get('ok') else "falha"
+            self._log_debug(f"Resposta do Slack: {status} (ts: {response.get('ts', 'não disponível')})")
             return response['ts']
         except SlackApiError as e:
+            self._log_debug(f"Erro ao enviar mensagem: {str(e)}")
             BuiltIn().log_to_console(f"_post_principal_message: Erro na API do Slack: {e.response['error']}")
             raise
 

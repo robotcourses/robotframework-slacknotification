@@ -1,6 +1,6 @@
 *** Settings ***
 Library    ../../../../RobotSlackNotification/
-# ...    test_title=With Test Failed
+...    test_title=With Test Failed
 ...    environment=HML
 ...    cicd_url=https://cicd.com/123456
 Test Tags    pix_automatico
