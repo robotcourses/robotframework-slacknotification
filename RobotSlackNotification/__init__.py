@@ -144,26 +144,59 @@ class RobotSlackNotification:
         self.language = self._init_args["language"].lower()
         self.client = slack_sdk.WebClient(token=self.config.token, timeout=30)
         self.cicd_url = self.config.cicd_url
-        self.text_fallback = f'Aplicação em teste: {self.config.test_title}'
+        # Usa o nome da suite se test_title não estiver definido
+        title = self.config.test_title if self.config.test_title else "Execução de Testes"
+        self.text_fallback = f'Aplicação em teste: {title}'
         self.suite_slack_groups = slack_config["suite_groups"]
         self.usergroup_handle_to_id = get_slack_usergroup_ids(self.config.token)
 
+    def _get_suite_groups(self, suite_name: str) -> List[str]:
+        """Busca grupos configurados para a suite em todos os níveis"""
+        groups = []
+        # Divide o nome da suite em partes
+        parts = suite_name.split('.')
+        # Constrói os níveis da suite do mais alto ao mais baixo
+        for i in range(len(parts)):
+            level = '.'.join(parts[:i+1])
+            if level in self.suite_slack_groups:
+                groups.extend(self.suite_slack_groups[level])
+        return list(set(groups))  # Remove duplicatas
+
     def start_suite(self, data, result):
         self._ensure_config()
-        # Se test_title não foi informado, usa o nome da suite
-        if not self.config.test_title:
-            try:
-                self.config.test_title = BuiltIn().get_variable_value('${SUITE_NAME}') or result.name
-            except Exception:
-                self.config.test_title = result.name
+       
+        try:
+            suite_source = BuiltIn().get_variable_value('${SUITE_SOURCE}')
+            
+            if suite_source:
+                # Remove a extensão .robot e o caminho do arquivo
+                suite_name = os.path.splitext(os.path.basename(suite_source))[0]
+                # Constrói o nome completo da suite
+                self.suite_name = f"Pix.PixAutomatico.Pagador.{suite_name}"
+            else:
+                # Se não conseguir o SUITE_SOURCE, tenta usar o nome completo do result
+                if "." in result.name:
+                    self.suite_name = result.name
+                else:
+                    self.suite_name = f"Pix.PixAutomatico.Pagador.{result.name}"
+        except Exception as e:
+            # Em caso de erro, tenta usar o nome completo do result
+            if "." in result.name:
+                self.suite_name = result.name
+            else:
+                self.suite_name = f"Pix.PixAutomatico.Pagador.{result.name}"
+            BuiltIn().log_to_console(f"Erro ao obter nome da suite: {str(e)}")
+            BuiltIn().log_to_console(f"Usando nome da suite do result: {self.suite_name}")
+
         t = TRANSLATIONS.get(self.language, TRANSLATIONS["en"])
         self.general_result_status = t["in_progress"]
         self.suite_result_status = t["in_progress"]
-        self.suite_name = result.name
         self.general_result_icon = self.result_icons_list[0]
         self.suite_result_icon = self.result_icons_list[0]
+        
         # Associa grupos à suite (handles)
-        self.current_suite_groups = self.suite_slack_groups.get(self.suite_name, [])
+        self.current_suite_groups = self._get_suite_groups(self.suite_name)
+        
         if self.config.send_message and self.message_timestamp == []:
             message = self._build_principal_message(self.count_total, self.count_pass, self.count_failed, self.count_skipped)
             ts = self._post_principal_message(result, message)
@@ -210,23 +243,6 @@ class RobotSlackNotification:
             self.general_result_icon = self.result_icons_list[3]
             self.general_result_status = t["status_skipped"]
 
-        # Envia menção aos grupos se houver falhas
-        if self.count_failed > 0 and self.current_suite_groups:
-            ids = [
-                self.usergroup_handle_to_id.get(handle.lstrip("@"))
-                for handle in self.current_suite_groups
-            ]
-            ids = [id_ for id_ in ids if id_]
-            if ids:
-                mention_text = " ".join([f"<!subteam^{gid}>" for gid in ids])
-                plural = len(ids) > 1
-                mention_message = build_group_mention_message(mention_text, plural, self.language)
-                self._post_thread_message(
-                    None,
-                    mention_message,
-                    self.message_timestamp[0]
-                )
-
         message = self._build_principal_message(self.count_total, self.count_pass, self.count_failed, self.count_skipped)
         self._update_principal_message(result, self.message_timestamp[0], message)
 
@@ -272,14 +288,15 @@ class RobotSlackNotification:
             raise
         
     def _build_principal_message(self, executions, success_executions, failed_executions, skipped_executions):
-        if self.config.environment and self.config.environment.strip():
-            context_header = f"{self.config.test_title} | {self.config.environment}"
-        else:
-            context_header = f"{self.config.test_title}"
-
         t = TRANSLATIONS.get(self.language, TRANSLATIONS["en"])
+        # Usa o nome da suite se test_title não estiver definido
+        title = self.config.test_title if self.config.test_title else self.suite_name
+        context_header = f"{title}"
+        if self.config.environment:
+            context_header += f" | {self.config.environment}"
+        
         message = PrincipalMessage(
-            context=context_header,  # Agora será usado diretamente como header
+            context=context_header,
             environment="",  # Não será usado no header, já está em context_header
             cicd_url=self.cicd_url,
             language=self.language
@@ -308,3 +325,31 @@ class RobotSlackNotification:
             language=self.language
         )
         return message.to_dict()['blocks']
+
+    def close(self):
+        """Método chamado ao finalizar todas as suites"""
+        if not self.config.send_message or not self.message_timestamp:
+            return
+
+        # Coleta todos os grupos únicos de todas as suites
+        all_groups = set()
+        for suite_name in self.suite_slack_groups.keys():
+            groups = self._get_suite_groups(suite_name)
+            all_groups.update(groups)
+
+        # Se houver falhas e grupos configurados, envia menção
+        if self.count_failed > 0 and all_groups:
+            ids = [
+                self.usergroup_handle_to_id.get(handle.lstrip("@"))
+                for handle in all_groups
+            ]
+            ids = [id_ for id_ in ids if id_]
+            if ids:
+                mention_text = " ".join([f"<!subteam^{gid}>" for gid in ids])
+                plural = len(ids) > 1
+                mention_message = build_group_mention_message(mention_text, plural, self.language)
+                self._post_thread_message(
+                    None,
+                    mention_message,
+                    self.message_timestamp[0]
+                )
