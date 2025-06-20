@@ -126,6 +126,7 @@ class RobotSlackNotification:
         self.current_suite_groups = []
         self.usergroup_handle_to_id = {}
         self.debug_logs = False
+        self.executed_suite_groups = set()
 
     def _log_debug(self, message: str):
         """Método para exibir logs de debug quando DEBUG_LOGS estiver ativo"""
@@ -185,11 +186,9 @@ class RobotSlackNotification:
     def _get_suite_groups_hierarchical(self, suite_longname):
         """
         Busca grupos do SUITE_SLACK_GROUPS do mais específico para o mais genérico.
-        Exemplo: Pix.PixAutomatico.Pagador.Jornada1 ->
-        tenta: Pix.PixAutomatico.Pagador.Jornada1, Pix.PixAutomatico.Pagador, Pix.PixAutomatico, Pix
         """
         slack_config = load_slack_config()
-        suite_slack_groups = slack_config.get('suite_slack_groups', {})
+        suite_slack_groups = slack_config.get('suite_groups', {})
         partes = suite_longname.split('.')
         for i in range(len(partes), 0, -1):
             chave = '.'.join(partes[:i])
@@ -207,24 +206,22 @@ class RobotSlackNotification:
             self._log_debug(f"SUITE_SOURCE: {suite_source}")
             
             if suite_source:
-                # Remove a extensão .robot e o caminho do arquivo
-                suite_name = os.path.splitext(os.path.basename(suite_source))[0]
                 # Constrói o nome completo da suite
-                self.suite_name = f"Pix.PixAutomatico.Pagador.{suite_name}"
+                self.suite_name = f"{result.longname}"
                 self._log_debug(f"Nome completo da suite: {self.suite_name}")
             else:
                 # Se não conseguir o SUITE_SOURCE, tenta usar o nome completo do result
                 if "." in result.name:
                     self.suite_name = result.name
                 else:
-                    self.suite_name = f"Pix.PixAutomatico.Pagador.{result.name}"
+                    self.suite_name = f"{result.longname}"
                 self._log_debug(f"Usando nome da suite do result: {self.suite_name}")
         except Exception as e:
             # Em caso de erro, tenta usar o nome completo do result
             if "." in result.name:
                 self.suite_name = result.name
             else:
-                self.suite_name = f"Pix.PixAutomatico.Pagador.{result.name}"
+                self.suite_name = f"{result.longname}"
             self._log_debug(f"Erro ao obter nome da suite: {str(e)}")
             self._log_debug(f"Usando nome da suite do result: {self.suite_name}")
 
@@ -236,12 +233,14 @@ class RobotSlackNotification:
         
         # Busca hierárquica de grupos para a suite
         suite_groups = self._get_suite_groups_hierarchical(result.longname)
-        self._log_debug(f"Grupos encontrados para suite {result.longname}: {suite_groups}")
         self.suite_groups = suite_groups
         
         # Associa grupos à suite (handles)
         self.current_suite_groups = self._get_suite_groups(self.suite_name)
         self._log_debug(f"Grupos encontrados para suite {self.suite_name}: {self.current_suite_groups}")
+        
+        # Atualiza o set de grupos executados
+        self.executed_suite_groups.update(self.current_suite_groups)
         
         if self.config.send_message and self.message_timestamp == []:
             self._log_debug("Enviando mensagem principal...")
@@ -384,11 +383,8 @@ class RobotSlackNotification:
         if not self.config.send_message or not self.message_timestamp:
             return
 
-        # Coleta todos os grupos únicos de todas as suites
-        all_groups = set()
-        for suite_name in self.suite_slack_groups.keys():
-            groups = self._get_suite_groups(suite_name)
-            all_groups.update(groups)
+        # Usa apenas os grupos das suites realmente executadas
+        all_groups = set(self.executed_suite_groups)
 
         # Se houver falhas e grupos configurados, envia menção
         if self.count_failed > 0 and all_groups:

@@ -12,11 +12,6 @@ DEBUG_LOGS = True  # Ativa/desativa logs detalhados no console (True/False)
 
 # Configurações opcionais de grupos por suite
 SUITE_SLACK_GROUPS = {
-    # Exemplo de configuração para diferentes níveis de suite
-    # "Pix": ["grupo_test"],  # Nível mais alto
-    # "Pix.PixAutomatico": ["grupo_dev"],  # Nível intermediário
-    # "Pix.PixAutomatico.Pagador": ["grupo_test"],  # Nível intermediário
-    # "Pix.PixAutomatico.Pagador.Jornada1": ["grupo_dev", "grupo_test"],  # Nível mais baixo
-    # "Pix.PixAutomatico.Pagador.Jornada2": ["grupo_dev", "grupo_test"],  # Nível mais baixo
-    "Pix.PixAutomatico.Recebedor": ["grupo_test"],  # Nível intermediário
+    "TestSuite": ["grupo_test", "grupo_dev"],
+    "IntermediateSuite": ["grupo_dev"],
 }
