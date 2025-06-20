@@ -182,6 +182,22 @@ class RobotSlackNotification:
                 groups.extend(self.suite_slack_groups[level])
         return list(set(groups))  # Remove duplicatas
 
+    def _get_suite_groups_hierarchical(self, suite_longname):
+        """
+        Busca grupos do SUITE_SLACK_GROUPS do mais específico para o mais genérico.
+        Exemplo: Pix.PixAutomatico.Pagador.Jornada1 ->
+        tenta: Pix.PixAutomatico.Pagador.Jornada1, Pix.PixAutomatico.Pagador, Pix.PixAutomatico, Pix
+        """
+        slack_config = load_slack_config()
+        suite_slack_groups = slack_config.get('suite_slack_groups', {})
+        partes = suite_longname.split('.')
+        for i in range(len(partes), 0, -1):
+            chave = '.'.join(partes[:i])
+            grupos = suite_slack_groups.get(chave)
+            if grupos:
+                return grupos
+        return []
+
     def start_suite(self, data, result):
         self._ensure_config()
         self._log_debug(f"Suite original: {result.name}")
@@ -217,6 +233,11 @@ class RobotSlackNotification:
         self.suite_result_status = t["in_progress"]
         self.general_result_icon = self.result_icons_list[0]
         self.suite_result_icon = self.result_icons_list[0]
+        
+        # Busca hierárquica de grupos para a suite
+        suite_groups = self._get_suite_groups_hierarchical(result.longname)
+        self._log_debug(f"Grupos encontrados para suite {result.longname}: {suite_groups}")
+        self.suite_groups = suite_groups
         
         # Associa grupos à suite (handles)
         self.current_suite_groups = self._get_suite_groups(self.suite_name)
