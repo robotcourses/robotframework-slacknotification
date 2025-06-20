@@ -57,11 +57,15 @@ SLACK_CHANNEL = os.getenv('SLACK_CHANNEL', "")
 SUITE_SLACK_GROUPS = {
     "Test Slack": ["grupo_dev", "grupo_test"],
 }
+
+# Configuração opcional para logs de debug
+DEBUG_LOGS = True  # Ativa logs detalhados para debug
 ```
 
 - O nome da suite deve ser igual ao exibido no log do Robot Framework
 - Os nomes dos grupos devem ser os "handles" dos User Groups do Slack (sem o `@`)
 - O arquivo é obrigatório para a biblioteca funcionar
+- `DEBUG_LOGS` (opcional): Quando `True`, exibe logs detalhados no console para facilitar o debug da biblioteca
 
 ### 4. (Opcional) Suporte a múltiplos idiomas
 
@@ -170,14 +174,29 @@ SLACK_CHANNEL=YOUR_CHANNEL_ID
 Create a file named `robot_slack_config.py` in your test project root, as shown below:
 
 ```python
+from dotenv import load_dotenv
+import os
+
+load_dotenv()
+
+# Required Slack configurations
+SLACK_API_TOKEN = os.getenv('SLACK_API_TOKEN', "")
+SLACK_CHANNEL = os.getenv('SLACK_CHANNEL', "")
+
+# Optional suite group configurations
 SUITE_SLACK_GROUPS = {
     "Suite Name 1": ["grupo_dev", "grupo_qa"],
     "Suite Name 2": ["grupo_ops"],
 }
+
+# Optional debug logs configuration
+DEBUG_LOGS = True  # Enables detailed debug logs
 ```
+
 - The suite name must match exactly what is shown in the Robot Framework log
 - Group names must be the User Group handles from Slack (without `@`)
-- The file is optional. If it doesn't exist, no group will be mentioned.
+- The file is required for the library to work
+- `DEBUG_LOGS` (optional): When `True`, displays detailed logs in the console to help debug the library
 
 ### 4. (Optional) Multi-language support
 
