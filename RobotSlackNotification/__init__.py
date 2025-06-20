@@ -74,9 +74,23 @@ def get_slack_usergroup_ids(token):
     from slack_sdk import WebClient
     client = WebClient(token=token)
     try:
+        # Para testar o log de erro, descomente a linha abaixo:
         response = client.usergroups_list()
         return {g["handle"]: g["id"] for g in response["usergroups"]}
-    except Exception:
+    except Exception as e:
+        # Exibe log de aviso se DEBUG_LOGS estiver ativo
+        try:
+            config_path = os.path.join(os.getcwd(), "robot_slack_config.py")
+            debug_logs = False
+            if os.path.exists(config_path):
+                spec = importlib.util.spec_from_file_location("robot_slack_config", config_path)
+                config = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(config)
+                debug_logs = getattr(config, 'DEBUG_LOGS', False)
+            if debug_logs:
+                BuiltIn().log_to_console(f"[WARN] Could not fetch Slack usergroups: {str(e)}")
+        except Exception:
+            pass
         return {}
 
 class RobotSlackNotification:
