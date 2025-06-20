@@ -19,7 +19,7 @@ class SlackConfig:
     send_message: bool = True
 
 class SlackNotificationError(Exception):
-    """Exceção personalizada para erros de notificação do Slack"""
+    """Custom exception for Slack notification errors"""
     pass
 
 def retry_on_slack_error(max_retries: int = 3, delay: int = 1):
@@ -33,9 +33,9 @@ def retry_on_slack_error(max_retries: int = 3, delay: int = 1):
                 except SlackApiError as e:
                     last_error = e
                     if attempt < max_retries - 1:
-                        time.sleep(delay * (attempt + 1))  # Exponential backoff
+                        time.sleep(delay * (attempt + 1))  # Retentativa exponencial
                         continue
-                    raise SlackNotificationError(f"Falha após {max_retries} tentativas: {str(e)}") from e
+                    raise SlackNotificationError(f"Failed after {max_retries} attempts: {str(e)}") from e
             raise last_error
         return wrapper
     return decorator
@@ -50,8 +50,8 @@ def load_slack_config():
         )
         if not spec or not os.path.exists(config_path):
             BuiltIn().log_to_console(
-                f"[ERRO] Arquivo robot_slack_config.py não encontrado na raiz do projeto. "
-                f"Crie o arquivo com as configurações necessárias antes de executar os testes."
+                f"[ERROR] File robot_slack_config.py not found in the project root. "
+                f"Create the file with the necessary settings before running the tests."
             )
             return None
         config = importlib.util.module_from_spec(spec)
@@ -59,7 +59,7 @@ def load_slack_config():
         # Verifica se as configurações obrigatórias existem
         if not hasattr(config, "SLACK_API_TOKEN") or not hasattr(config, "SLACK_CHANNEL"):
             raise SlackNotificationError(
-                "SLACK_API_TOKEN e SLACK_CHANNEL são obrigatórios no arquivo robot_slack_config.py"
+                "SLACK_API_TOKEN and SLACK_CHANNEL are required in the robot_slack_config.py file"
             )
         return {
             "token": config.SLACK_API_TOKEN,
@@ -68,7 +68,7 @@ def load_slack_config():
             "debug_logs": getattr(config, 'DEBUG_LOGS', False)
         }
     except Exception as e:
-        raise SlackNotificationError(f"Erro ao carregar robot_slack_config.py: {str(e)}")
+        raise SlackNotificationError(f"Error loading robot_slack_config.py: {str(e)}")
 
 def get_slack_usergroup_ids(token):
     from slack_sdk import WebClient
@@ -129,14 +129,14 @@ class RobotSlackNotification:
         self.executed_suite_groups = set()
 
     def _log_debug(self, message: str):
-        """Método para exibir logs de debug quando DEBUG_LOGS estiver ativo"""
+        """Method to display debug logs when DEBUG_LOGS is enabled"""
         if self.debug_logs:
             try:
                 BuiltIn().log_to_console(f"[DEBUG] {message}")
             except Exception as e:
                 # Em caso de erro, tenta usar print como fallback
                 print(f"[DEBUG] {message}")
-                print(f"[DEBUG] Erro ao usar BuiltIn().log_to_console: {str(e)}")
+                print(f"[DEBUG] Error using BuiltIn().log_to_console: {str(e)}")
 
     def _ensure_config(self):
         if self.config is not None:
@@ -144,7 +144,7 @@ class RobotSlackNotification:
         slack_config = load_slack_config()
         if not slack_config:
             raise SlackNotificationError(
-                "Arquivo robot_slack_config.py não encontrado. Crie o arquivo na raiz do projeto antes de executar os testes."
+                "File robot_slack_config.py not found. Create the file in the project root before running the tests."
             )
         self.config = SlackConfig(
             token=slack_config["token"],
@@ -158,21 +158,21 @@ class RobotSlackNotification:
         self.client = slack_sdk.WebClient(token=self.config.token, timeout=30)
         self.cicd_url = self.config.cicd_url
         # Usa o nome da suite se test_title não estiver definido
-        title = self.config.test_title if self.config.test_title else "Execução de Testes"
-        self.text_fallback = f'Aplicação em teste: {title}'
+        title = self.config.test_title if self.config.test_title else "Test Execution"
+        self.text_fallback = f'Application under test: {title}'
         self.suite_slack_groups = slack_config["suite_groups"]
         self.usergroup_handle_to_id = get_slack_usergroup_ids(self.config.token)
         
         # Carrega a configuração de debug do slack_config
         self.debug_logs = slack_config.get("debug_logs", False)
         if self.debug_logs:
-            BuiltIn().log_to_console(f"[DEBUG] Configuração DEBUG_LOGS carregada: {self.debug_logs}")
+            BuiltIn().log_to_console(f"[DEBUG] DEBUG_LOGS configuration loaded: {self.debug_logs}")
         
-        self._log_debug("Configurações carregadas com sucesso")
-        self._log_debug(f"Debug logs: {'Ativado' if self.debug_logs else 'Desativado'}")
+        self._log_debug("Configuration loaded successfully")
+        self._log_debug(f"Debug logs: {'Enabled' if self.debug_logs else 'Disabled'}")
 
     def _get_suite_groups(self, suite_name: str) -> List[str]:
-        """Busca grupos configurados para a suite em todos os níveis"""
+        """Searches for groups configured for the suite at all levels"""
         groups = []
         # Divide o nome da suite em partes
         parts = suite_name.split('.')
@@ -185,7 +185,7 @@ class RobotSlackNotification:
 
     def _get_suite_groups_hierarchical(self, suite_longname):
         """
-        Busca grupos do SUITE_SLACK_GROUPS do mais específico para o mais genérico.
+        Searches for groups in SUITE_SLACK_GROUPS from the most specific to the most generic.
         """
         slack_config = load_slack_config()
         suite_slack_groups = slack_config.get('suite_groups', {})
@@ -199,31 +199,31 @@ class RobotSlackNotification:
 
     def start_suite(self, data, result):
         self._ensure_config()
-        self._log_debug(f"Suite original: {result.name}")
+        self._log_debug(f"Original suite: {result.name}")
         
         try:
             suite_source = BuiltIn().get_variable_value('${SUITE_SOURCE}')
             self._log_debug(f"SUITE_SOURCE: {suite_source}")
             
             if suite_source:
-                # Constrói o nome completo da suite
+                # Monta o nome completo da suite
                 self.suite_name = f"{result.longname}"
-                self._log_debug(f"Nome completo da suite: {self.suite_name}")
+                self._log_debug(f"Full suite name: {self.suite_name}")
             else:
-                # Se não conseguir o SUITE_SOURCE, tenta usar o nome completo do result
+                # Se SUITE_SOURCE não estiver disponível, tenta usar o nome completo do result
                 if "." in result.name:
                     self.suite_name = result.name
                 else:
                     self.suite_name = f"{result.longname}"
-                self._log_debug(f"Usando nome da suite do result: {self.suite_name}")
+                self._log_debug(f"Using suite name from result: {self.suite_name}")
         except Exception as e:
             # Em caso de erro, tenta usar o nome completo do result
             if "." in result.name:
                 self.suite_name = result.name
             else:
                 self.suite_name = f"{result.longname}"
-            self._log_debug(f"Erro ao obter nome da suite: {str(e)}")
-            self._log_debug(f"Usando nome da suite do result: {self.suite_name}")
+            self._log_debug(f"Error getting suite name: {str(e)}")
+            self._log_debug(f"Using suite name from result: {self.suite_name}")
 
         t = TRANSLATIONS.get(self.language, TRANSLATIONS["en"])
         self.general_result_status = t["in_progress"]
@@ -237,17 +237,17 @@ class RobotSlackNotification:
         
         # Associa grupos à suite (handles)
         self.current_suite_groups = self._get_suite_groups(self.suite_name)
-        self._log_debug(f"Grupos encontrados para suite {self.suite_name}: {self.current_suite_groups}")
+        self._log_debug(f"Groups found for suite {self.suite_name}: {self.current_suite_groups}")
         
         # Atualiza o set de grupos executados
         self.executed_suite_groups.update(self.current_suite_groups)
         
         if self.config.send_message and self.message_timestamp == []:
-            self._log_debug("Enviando mensagem principal...")
+            self._log_debug("Sending main message...")
             message = self._build_principal_message(self.count_total, self.count_pass, self.count_failed, self.count_skipped)
             ts = self._post_principal_message(result, message)
             self.message_timestamp.append(ts)
-            self._log_debug(f"Mensagem enviada com timestamp: {ts}")
+            self._log_debug(f"Message sent with timestamp: {ts}")
 
     def end_test(self, data, result):
         if self.config.send_message:
@@ -379,7 +379,7 @@ class RobotSlackNotification:
         return message.to_dict()['blocks']
 
     def close(self):
-        """Método chamado ao finalizar todas as suites"""
+        """Method called after all suites have finished"""
         if not self.config.send_message or not self.message_timestamp:
             return
 
